@@ -1,6 +1,8 @@
 #![allow(warnings)]
 use std::{error::Error, io, process};
 
+use plotters::{backend::BitMapBackend, drawing::IntoDrawingArea, prelude::*};
+
 // El struct Row nos permite separar cada fila del .csv en distintos elementos
 // para trabajar con valores atomicos.
 #[derive(serde::Deserialize, Debug)]
@@ -15,7 +17,27 @@ struct Row {
 }
 
 // Esta es la funcion mas importante. No hay que prestar mucha atencion al tipo de valor devolvido.
-fn read_csv() -> Result<(), Box<dyn Error>> {
+fn find_true_rms() -> Result<(), Box<dyn Error>> {
+    //Create the canvas
+    let root = BitMapBackend::new("plotters/0.png", (640, 480)).into_drawing_area();
+    let _ = root.fill(&WHITE);
+    let root = root.margin(30, 5, 50, 30);
+
+    // Make the chart
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Data", ("sans-serif", 40).into_font())
+        .x_label_area_size(100)
+        .y_label_area_size(1)
+        .build_cartesian_2d(-2E-2f32..2E-2f32, -20f32..20f32)?;
+
+    // Configure the chart
+    chart
+        .configure_mesh()
+        .x_labels(5)
+        .y_labels(5)
+        .y_label_formatter(&|x| format!("{:.3}", x))
+        .draw()?;
+
     // Creamos un lector.
     let mut rdr = csv::Reader::from_reader(io::stdin());
 
@@ -31,6 +53,8 @@ fn read_csv() -> Result<(), Box<dyn Error>> {
     let mut n = 0.0;
     let mut v_sum: f32 = 0.0;
 
+    // creamos vectores para almacenar los datos por columnas
+    let mut graphing_vec = Vec::new();
     // Aqui iteramos sobre cada fila
     for record in rdr.records() {
         // Descomponemos la fila en el struct Row
@@ -39,17 +63,24 @@ fn read_csv() -> Result<(), Box<dyn Error>> {
         v_sum += f32::powf(row.Voltage.parse::<f32>().unwrap(), 2.0);
         n += 1.0;
 
-        // Debug info. WARNING: no descomentar si se va a utilizar el archivo grande, el tiempo de
-        // ejecucion aumenta significativamente.
-
-        // println!(
-        //     "Time: {:?} \n\tVoltage: {:?}",
-        //     row.Time.parse::<f32>().unwrap(),
-        //     row.Voltage.parse::<f32>().unwrap()
-        // );
+        // add the point
+        let gp = (row.Time.parse::<f32>()?, row.Voltage.parse::<f32>()?);
+        graphing_vec.push(gp);
     }
     let result = f32::sqrt((1.0 / n) * v_sum);
     println!("{:?}", result);
+
+    // make the graph based on all the recorded ponints.
+    chart.draw_series(PointSeries::of_element(
+        graphing_vec,
+        1,
+        &RED,
+        &|c, s, st| {
+            return EmptyElement::at(c)    // We want to construct a composed element on-the-fly
+            + Circle::new((0,0),s,st.filled()); // At this point, the new pixel coordinate is established
+        },
+    ))?;
+    root.present()?;
 
     // devolvemos ok a main
     Ok(())
@@ -61,7 +92,7 @@ fn main() {
     let now = Instant::now();
 
     // ejecutamos nuestra funcion, si algo sale mal, este codigo lo atrapa y cierra el proceso.
-    if let Err(err) = read_csv() {
+    if let Err(err) = find_true_rms() {
         println!("error running example: {}", err);
         process::exit(1);
     }
